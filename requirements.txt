@@ -1,0 +1,16 @@
+numpy
+scipy
+Pillow
+cython
+matplotlib
+scikit-image
+tensorflow==1.13.1
+keras==2.2.4
+opencv-python==3.4.9.31
+h5py==2.10.0
+imgaug
+IPython[all]
+Werkzeug
+Flask
+flask_cors
+gevent
