@@ -2,11 +2,11 @@ node_modules/
 /logs/*
 !/logs/.test
 /imageUpload/*
-./imageUpload/.test
+!/imageUpload/.test
 /imageResult/*
-./imageResult/.test
+!/imageResult/.test
 /cert/*
-./cert/.test
+!/cert/.test
 # Editor directories and files
 .idea
 .vscode
