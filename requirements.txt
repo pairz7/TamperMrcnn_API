@@ -14,3 +14,4 @@ Werkzeug
 Flask
 flask_cors
 gevent
+pymysql
