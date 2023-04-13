@@ -5,7 +5,7 @@ import os
 import glob
 import re
 import time
-
+import pymysql
 import numpy as np
 import io
 import skimage.io
@@ -13,12 +13,10 @@ from mrcnn.config import Config
 # Kerasfrom io import StringIO
 import base64
 from urllib.parse import quote
-from keras.applications.imagenet_utils import preprocess_input, decode_predictions
-from keras.models import load_model
-from keras.preprocessing import image
-import matplotlib.pyplot as plt
+import uuid
+import datetime
 # Flask utils
-from flask import Flask, redirect, url_for, request, render_template ,make_response,jsonify
+from flask import Flask, request,jsonify
 from werkzeug.utils import secure_filename
 from gevent.pywsgi import WSGIServer
 from matplotlib.backends.backend_agg import FigureCanvasAgg as FigureCanvas
@@ -32,18 +30,24 @@ app = Flask(__name__)
 CORS(app, resources=r'/*')
 # Model saved with Keras model.save()
 MODEL_PATH = 'logs/mask_rcnn_shapes_0012.h5'
-# MODEL_PATH = 'F:/2022.10.08-basicMrcnn-19w-8/shapes20221008T1601/mask_rcnn_shapes_0020.h5'
-#MODEL_PATH = 'F:/实验-数据集分类/shapes20221023T2136/mask_rcnn_shapes_0020.h5'
-
-# You can also use pretrained model from Keras
-# Check https://keras.io/applications/
-#from keras.applications.resnet50 import ResNet50
-#model = ResNet50(weights='imagenet')
-#print('Model loaded. Check http://127.0.0.1:5000/')
-# Local path to trained weights file
 ROOT_DIR = os.path.abspath("../")
-
 MODEL_DIR = os.path.join(ROOT_DIR, "logs")
+
+# Mysql配置
+# mysql配置
+host = 'notamper.cn'
+port = 3306
+db = 'tamperWeb'
+user = 'web_user'
+password = '123456'
+
+# ---- 用pymysql 操作数据库
+def get_connection():
+    conn = pymysql.connect(host=host, port=port, db=db, user=user, password=password)
+    return conn
+
+mysql_conn = get_connection()
+
 class InferenceConfig(Config):
     # Set batch size to 1 since we'll be running inference on
     # one image at a time. Batch size = GPU_COUNT * IMAGES_PER_GPU
@@ -74,36 +78,67 @@ def model_predict(img_path, model,threshold=0.3):
     r = results[0]
     return visualize.display_instances(img1, r['rois'], r['masks'], r['class_ids'],class_names, r['scores'],threshold=threshold),r
 
-@app.route('/', methods=['GET'])
-def index():
-    # Main page
-    return render_template('index.html')
 
 file_path=""
 
 @app.route('/predict', methods=['POST'])
 def upload():
     if request.method == "POST":
-        fig = plt.figure()
+        """第一轮生成记录信息"""
+        detectID = uuid.uuid1().hex
+        serviceName = "图像篡改检测"
+        detectDatetime = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        """接收参数"""
         f = request.files['file']
         threshold = float(request.form['threshold'])
-        req=request
         basepath = os.path.dirname(__file__)
-        file_path = os.path.join(basepath, 'static', secure_filename(f.filename))
+        file_suffix = f.filename.split('.')[1]
+        file_name = detectID + '.' + file_suffix
+        file_path = os.path.join(basepath, 'imageUpload', secure_filename(file_name))
+        '''第二轮生成记录信息'''
+        uploadImageUrl = 'imageUpload/' + file_name
+        resultImageUrl = 'imageResult/' + detectID + '.jpg'
+        callerIP = request.form['ip']
+        callerUsername = request.form['username']
         f.save(file_path)
         print(file_path)
+        """检测部分"""
         startTime = time.time()
         preds,result_info = model_predict(file_path,model,threshold)
         result_info=pickResult(result_info,threshold)
         names_list=get_class_name_list(result_info)
+        """第三轮生成记录信息"""
+        tamperRegionNum = len(result_info['scores'])
+        if tamperRegionNum > 0:
+            detectResult = "疑似篡改"
+        else:
+            detectResult = "未发现篡改"
         cost_time=time.time()-startTime
         cost_time="%.2f"%(cost_time)
         img = io.BytesIO()
-        preds.savefig(img, format='png',bbox_inches="tight")
+        preds.savefig(img, format='jpg',bbox_inches="tight", pad_inches=0)
+        preds.savefig(resultImageUrl, format='jpg',bbox_inches="tight", pad_inches=0)
         img.seek(0)
         data = base64.b64encode(img.getvalue()).decode()
-        data_url = 'data:image/png;base64,{}'.format(quote(data))
+        data_url = 'data:image/jpeg;base64,{}'.format(quote(data))
         res={'data_url':data_url,'cost_time':cost_time,'class_names':names_list,'scores':get_scores_list(result_info)}
+        '''生成记录 插入数据库'''
+        try:
+            cursor = mysql_conn.cursor(pymysql.cursors.DictCursor)
+            cursor.execute("INSERT INTO `imageRecord` \
+            (`detectID`, `serviceName`, `detectThreshold`,`detectDatetime`, `detectCostTime`, `tamperRegionNum`, `detectResult`,\
+             `detectState`,`resultImageUrl`, `uploadImageUrl`, `callerIP`, `callerUsername`) \
+            VALUES ('%s', '%s', '%.2f','%s', '%ss', '%d', '%s', '%s', '%s', '%s', '%s', '%s')" % (
+                detectID, serviceName, threshold, detectDatetime, cost_time, tamperRegionNum, detectResult, "已完成",\
+                resultImageUrl, uploadImageUrl, callerIP, callerUsername))
+            mysql_conn.ping(reconnect=True)
+            mysql_conn.commit()
+            cursor.close()
+        except Exception as e:
+            mysql_conn.rollback()
+            print(e)
+            cursor.close()
+            pass
         return jsonify(res)
     return None
 
@@ -163,8 +198,17 @@ def pickResult(result,threshold=0.7):
     return result
 
 if __name__ == '__main__':
-    # app.run(port=5002, debug=True)
+    port = 80  # 端口号
+    dev = 1 #1表示是开发模式
+    if dev==1:
+        # app.run('', port, debug=True,  use_reloader=False)
+        http_server = WSGIServer(('', port), app)
+        http_server.serve_forever()
+    else:
+        app.run('', port, debug=True, ssl_context=('cert/9215363_notamper.cn.pem', 'cert/9215363_notamper.cn.key'))
+        # Serve the app with gevent
+        print("Web Service running in http://localhost:%d/" % port)
+        http_server = WSGIServer(('', port), app, keyfile='cert/9215363_notamper.cn.key',
+                                 certfile='cert/9215363_notamper.cn.pem')
+        http_server.serve_forever()
 
-    # Serve the app with gevent
-    http_server = WSGIServer(('', 8080), app)
-    http_server.serve_forever()

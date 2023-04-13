@@ -47,7 +47,6 @@ def get_connection():
     return conn
 
 mysql_conn = get_connection()
-cursor = mysql_conn.cursor(pymysql.cursors.DictCursor)
 
 class InferenceConfig(Config):
     # Set batch size to 1 since we'll be running inference on
@@ -125,6 +124,7 @@ def upload():
         res={'data_url':data_url,'cost_time':cost_time,'class_names':names_list,'scores':get_scores_list(result_info)}
         '''生成记录 插入数据库'''
         try:
+            cursor = mysql_conn.cursor(pymysql.cursors.DictCursor)
             cursor.execute("INSERT INTO `imageRecord` \
             (`detectID`, `serviceName`, `detectThreshold`,`detectDatetime`, `detectCostTime`, `tamperRegionNum`, `detectResult`,\
              `detectState`,`resultImageUrl`, `uploadImageUrl`, `callerIP`, `callerUsername`) \
@@ -133,9 +133,11 @@ def upload():
                 resultImageUrl, uploadImageUrl, callerIP, callerUsername))
             mysql_conn.ping(reconnect=True)
             mysql_conn.commit()
+            cursor.close()
         except Exception as e:
             mysql_conn.rollback()
             print(e)
+            cursor.close()
             pass
         return jsonify(res)
     return None
@@ -196,7 +198,7 @@ def pickResult(result,threshold=0.7):
     return result
 
 if __name__ == '__main__':
-    port = 5000  # 端口号
+    port = 80  # 端口号
     dev = 1 #1表示是开发模式
     if dev==1:
         # app.run('', port, debug=True,  use_reloader=False)
