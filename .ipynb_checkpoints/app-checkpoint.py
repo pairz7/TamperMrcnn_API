@@ -16,7 +16,7 @@ from urllib.parse import quote
 import uuid
 import datetime
 # Flask utils
-from flask import Flask, request,jsonify
+from flask import Flask, request,jsonify,send_from_directory, make_response
 from werkzeug.utils import secure_filename
 from gevent.pywsgi import WSGIServer
 from matplotlib.backends.backend_agg import FigureCanvasAgg as FigureCanvas
@@ -102,6 +102,24 @@ def upload():
         callerUsername = request.form['username']
         f.save(file_path)
         print(file_path)
+        '''生成记录 插入数据库'''
+        try:
+            # check out if the connect is exist
+            mysql_conn.ping(reconnect=True)
+            cursor = mysql_conn.cursor(pymysql.cursors.DictCursor)
+            cursor.execute("INSERT INTO `imageRecord` \
+            (`detectID`, `serviceName`, `detectThreshold`,`detectDatetime`, \
+             `detectState`,`resultImageUrl`, `uploadImageUrl`, `callerIP`, `callerUsername`) \
+            VALUES ('%s', '%s', '%.2f','%s', '%s', '%s', '%s', '%s', '%s')" % (
+                detectID, serviceName, threshold, detectDatetime, "检测中",\
+                resultImageUrl, uploadImageUrl, callerIP, callerUsername))
+            mysql_conn.commit()
+            cursor.close()
+        except Exception as e:
+            mysql_conn.rollback()
+            print(e)
+            cursor.close()
+            pass
         """检测部分"""
         startTime = time.time()
         preds,result_info = model_predict(file_path,model,threshold)
@@ -122,17 +140,13 @@ def upload():
         data = base64.b64encode(img.getvalue()).decode()
         data_url = 'data:image/jpeg;base64,{}'.format(quote(data))
         res={'data_url':data_url,'cost_time':cost_time,'class_names':names_list,'scores':get_scores_list(result_info)}
-        '''生成记录 插入数据库'''
+        '''修改记录 生成完整记录'''
         try:
             # check out if the connect is exist
             mysql_conn.ping(reconnect=True)
             cursor = mysql_conn.cursor(pymysql.cursors.DictCursor)
-            cursor.execute("INSERT INTO `imageRecord` \
-            (`detectID`, `serviceName`, `detectThreshold`,`detectDatetime`, `detectCostTime`, `tamperRegionNum`, `detectResult`,\
-             `detectState`,`resultImageUrl`, `uploadImageUrl`, `callerIP`, `callerUsername`) \
-            VALUES ('%s', '%s', '%.2f','%s', '%ss', '%d', '%s', '%s', '%s', '%s', '%s', '%s')" % (
-                detectID, serviceName, threshold, detectDatetime, cost_time, tamperRegionNum, detectResult, "已完成",\
-                resultImageUrl, uploadImageUrl, callerIP, callerUsername))
+            cursor.execute("UPDATE `imageRecord` SET `detectCostTime`='%ss', `tamperRegionNum`='%d', `detectResult`='%s', `detectState`='%s' WHERE (`detectID`='%s')" % (
+                 cost_time, tamperRegionNum, detectResult, "已完成", detectID))
             mysql_conn.commit()
             cursor.close()
         except Exception as e:
