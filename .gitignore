@@ -5,6 +5,7 @@ node_modules/
 /imageUpload/*
 !/imageUpload/.test
 /imageResult/*
+/mrcnn/__pycache__/*
 !/imageResult/.test
 /cert/*
 !/cert/.test
