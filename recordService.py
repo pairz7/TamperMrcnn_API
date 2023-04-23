@@ -69,7 +69,7 @@ if __name__ == '__main__':
         app.run('', port, debug=True, ssl_context=('cert/9215363_notamper.cn.pem', 'cert/9215363_notamper.cn.key'))
         # Serve the app with gevent
         print("Web Service running in http://localhost:%d/" % port)
-        http_server = WSGIServer(('', port), app, keyfile='cert/9215363_notamper.cn.key',
-                                 certfile='cert/9215363_notamper.cn.pem')
+        http_server = WSGIServer(('', port), app, keyfile='cert/9766242_service.notamper.cn.key',
+                                 certfile='cert/9766242_service.notamper.cn.pem')
         http_server.serve_forever()
 

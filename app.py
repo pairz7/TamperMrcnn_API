@@ -176,6 +176,7 @@ def upload():
         cost_time = 0
         tamperRegionNum = 0
         detectResult = ''
+        code = 1
         res = {}
         try:
             startTime = time.time()
@@ -210,6 +211,7 @@ def upload():
                     "UPDATE `imageRecord` SET `detectCostTime`='%ss', `detectState`='%s' WHERE (`detectID`='%s')" % (
                         cost_time, "检测失败", detectID))
                 msg = '检测失败'
+                code = 0
 
             else:
                 cursor.execute(
@@ -223,7 +225,7 @@ def upload():
             print(e)
             cursor.close()
             pass
-        return jsonify({'msg':msg,'code':1,'result':res})
+        return jsonify({'msg':msg,'code':code,'result':res})
     return None
 
 
@@ -276,17 +278,17 @@ def pickResult(result,threshold=0.7):
     return result
 
 if __name__ == '__main__':
-    port = 801  # 端口号
+    port = 443  # 端口号
     dev = 1 #1表示是开发模式
     if dev==1:
         # app.run('', port, debug=True,  use_reloader=False)
         http_server = WSGIServer(('', port), app)
         http_server.serve_forever()
     else:
-        app.run('', port, debug=True, ssl_context=('cert/9215363_notamper.cn.pem', 'cert/9215363_notamper.cn.key'))
+        # app.run('', port, debug=True, ssl_context=('cert/9215363_notamper.cn.pem', 'cert/9215363_notamper.cn.key'))
         # Serve the app with gevent
         print("Web Service running in http://localhost:%d/" % port)
-        http_server = WSGIServer(('', port), app, keyfile='cert/9215363_notamper.cn.key',
-                                 certfile='cert/9215363_notamper.cn.pem')
+        http_server = WSGIServer(('', port), app, keyfile='cert/9766242_service.notamper.cn.key',
+                                 certfile='cert/9766242_service.notamper.cn.pem')
         http_server.serve_forever()
 

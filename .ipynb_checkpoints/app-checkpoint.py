@@ -19,8 +19,8 @@ import datetime
 from flask import Flask, request,jsonify,send_from_directory, make_response
 from werkzeug.utils import secure_filename
 from gevent.pywsgi import WSGIServer
-from matplotlib.backends.backend_agg import FigureCanvasAgg as FigureCanvas
-from matplotlib.figure import Figure
+# from matplotlib.backends.backend_agg import FigureCanvasAgg as FigureCanvas
+# from matplotlib.figure import Figure
 from mrcnn import utils
 import mrcnn.model as modellib
 from mrcnn import visualize
@@ -34,7 +34,6 @@ ROOT_DIR = os.path.abspath("../")
 MODEL_DIR = os.path.join(ROOT_DIR, "logs")
 
 # Mysql配置
-# mysql配置
 host = 'notamper.cn'
 port = 3306
 db = 'tamperWeb'
@@ -91,6 +90,58 @@ def upload():
         """接收参数"""
         f = request.files['file']
         threshold = float(request.form['threshold'])
+        orderID = request.form['orderID']
+        recv_key = request.form['Key']
+        """
+        验证API是否可用
+        首先检查orderID是否存在 然后查看key是否对应 
+        如果valid 判断state是否为正在运行 判断剩余次数是否大于0 如果是则通过且剩余次数-1 使用次数+1
+        """
+        isValid = False
+        msg = '发生未知错误'
+        try:
+            # check out if the connect is exist
+            mysql_conn.ping(reconnect=True)
+            cursor = mysql_conn.cursor(pymysql.cursors.DictCursor)
+            cursor.execute("select `usedTimes`,`remainTimes`,`key`,`state` from api where orderID = '%s'"%orderID)
+            api = cursor.fetchall()
+            api = api[0]
+            if len(api)==0 or recv_key!=api['key']:
+                #api验证失败
+                isValid = False
+                msg = 'API验证失败'
+            else:
+                usedTimes = int(api['usedTimes'])
+                remainTimes = int(api['remainTimes'])
+                state = api['state']
+                if state=='正在运行':
+                    if remainTimes>0:
+                        remainTimes -= 1
+                        usedTimes += 1
+                        cursor.execute("UPDATE `api` SET `usedTimes`='%d', `remainTimes`='%d' WHERE (`orderID`='%s')"%(usedTimes, remainTimes, orderID))
+                        mysql_conn.commit()
+                        isValid = True
+                    else:
+                        cursor.execute(
+                            "UPDATE `api` SET `state`='%s' WHERE (`orderID`='%s')" % (
+                            '欠费停止', orderID))
+                        mysql_conn.commit()
+                        msg = 'API已欠费'
+                        isValid = False
+                else:
+                    msg = 'API处于不可用状态'
+                    isValid = False
+            cursor.close()
+        except Exception as e:
+            mysql_conn.rollback()
+            print(e)
+            cursor.close()
+            pass
+        if not isValid:
+            return jsonify({'msg': msg, 'code':0, 'result':None})
+        """
+        验证通过
+        """
         basepath = os.path.dirname(__file__)
         file_suffix = f.filename.split('.')[1]
         file_name = detectID + '.' + file_suffix
@@ -121,32 +172,52 @@ def upload():
             cursor.close()
             pass
         """检测部分"""
-        startTime = time.time()
-        preds,result_info = model_predict(file_path,model,threshold)
-        result_info=pickResult(result_info,threshold)
-        names_list=get_class_name_list(result_info)
-        """第三轮生成记录信息"""
-        tamperRegionNum = len(result_info['scores'])
-        if tamperRegionNum > 0:
-            detectResult = "疑似篡改"
-        else:
-            detectResult = "未发现篡改"
-        cost_time=time.time()-startTime
-        cost_time="%.2f"%(cost_time)
-        img = io.BytesIO()
-        preds.savefig(img, format='jpg',bbox_inches="tight", pad_inches=0)
-        preds.savefig(resultImageUrl, format='jpg',bbox_inches="tight", pad_inches=0)
-        img.seek(0)
-        data = base64.b64encode(img.getvalue()).decode()
-        data_url = 'data:image/jpeg;base64,{}'.format(quote(data))
-        res={'data_url':data_url,'cost_time':cost_time,'class_names':names_list,'scores':get_scores_list(result_info)}
-        '''修改记录 生成完整记录'''
+        isExcept = False
+        cost_time = 0
+        tamperRegionNum = 0
+        detectResult = ''
+        code = 1
+        res = {}
+        try:
+            startTime = time.time()
+            preds, result_info = model_predict(file_path, model, threshold)
+            result_info = pickResult(result_info, threshold)
+            names_list = get_class_name_list(result_info)
+            """第三轮生成记录信息"""
+            tamperRegionNum = len(result_info['scores'])
+            if tamperRegionNum > 0:
+                detectResult = "疑似篡改"
+            else:
+                detectResult = "未发现篡改"
+            cost_time = time.time() - startTime
+            cost_time = "%.2f" % (cost_time)
+            img = io.BytesIO()
+            preds.savefig(img, format='jpg', bbox_inches="tight", pad_inches=0)
+            preds.savefig(resultImageUrl, format='jpg', bbox_inches="tight", pad_inches=0)
+            img.seek(0)
+            data = base64.b64encode(img.getvalue()).decode()
+            data_url = 'data:image/jpeg;base64,{}'.format(quote(data))
+            res = {'data_url': data_url, 'cost_time': cost_time, 'class_names': names_list,
+                   'scores': get_scores_list(result_info)}
+            '''修改记录 生成完整记录'''
+        except:
+            isExcept = True
         try:
             # check out if the connect is exist
             mysql_conn.ping(reconnect=True)
             cursor = mysql_conn.cursor(pymysql.cursors.DictCursor)
-            cursor.execute("UPDATE `imageRecord` SET `detectCostTime`='%ss', `tamperRegionNum`='%d', `detectResult`='%s', `detectState`='%s' WHERE (`detectID`='%s')" % (
-                 cost_time, tamperRegionNum, detectResult, "已完成", detectID))
+            if isExcept:
+                cursor.execute(
+                    "UPDATE `imageRecord` SET `detectCostTime`='%ss', `detectState`='%s' WHERE (`detectID`='%s')" % (
+                        cost_time, "检测失败", detectID))
+                msg = '检测失败'
+                code = 0
+
+            else:
+                cursor.execute(
+                    "UPDATE `imageRecord` SET `detectCostTime`='%ss', `tamperRegionNum`='%d', `detectResult`='%s', `detectState`='%s' WHERE (`detectID`='%s')" % (
+                        cost_time, tamperRegionNum, detectResult, "已完成", detectID))
+                msg = '检测成功'
             mysql_conn.commit()
             cursor.close()
         except Exception as e:
@@ -154,16 +225,10 @@ def upload():
             print(e)
             cursor.close()
             pass
-        return jsonify(res)
+        return jsonify({'msg':msg,'code':code,'result':res})
     return None
 
 
-"""       
-@app.route('/prediction', methods=['GET'])
-def gred():
-    print(request.args.get(file_path))
-    return render_template("im1.html",url = 'static/new_plot.jpg',url1= str(request.args.get(file_path)))
-"""    
 
 """
 @app.after_request
@@ -213,17 +278,17 @@ def pickResult(result,threshold=0.7):
     return result
 
 if __name__ == '__main__':
-    port = 80  # 端口号
+    port = 443  # 端口号
     dev = 1 #1表示是开发模式
     if dev==1:
         # app.run('', port, debug=True,  use_reloader=False)
         http_server = WSGIServer(('', port), app)
         http_server.serve_forever()
     else:
-        app.run('', port, debug=True, ssl_context=('cert/9215363_notamper.cn.pem', 'cert/9215363_notamper.cn.key'))
+        # app.run('', port, debug=True, ssl_context=('cert/9215363_notamper.cn.pem', 'cert/9215363_notamper.cn.key'))
         # Serve the app with gevent
         print("Web Service running in http://localhost:%d/" % port)
-        http_server = WSGIServer(('', port), app, keyfile='cert/9215363_notamper.cn.key',
-                                 certfile='cert/9215363_notamper.cn.pem')
+        http_server = WSGIServer(('', port), app, keyfile='cert/9766242_service.notamper.cn.key',
+                                 certfile='cert/9766242_service.notamper.cn.pem')
         http_server.serve_forever()
 
