@@ -26,6 +26,11 @@ import mrcnn.model as modellib
 from mrcnn import visualize
 # Define a flask app
 from flask_cors import CORS
+
+from matplotlib import pyplot as plt
+import matplotlib
+matplotlib.use("TkAgg")
+
 app = Flask(__name__)
 CORS(app, resources=r'/*')
 # Model saved with Keras model.save()
@@ -55,6 +60,7 @@ class InferenceConfig(Config):
     NUM_CLASSES = 1+1
     NAME = "shapes"
     DETECTION_MIN_CONFIDENCE=0.3
+    IMAGE_MIN_DIM = 512
 
 config = InferenceConfig()
 model = modellib.MaskRCNN(mode="inference", model_dir=MODEL_DIR, config=config)
@@ -192,8 +198,11 @@ def upload():
             cost_time = time.time() - startTime
             cost_time = "%.2f" % (cost_time)
             img = io.BytesIO()
-            preds.savefig(img, format='jpg', bbox_inches="tight", pad_inches=0)
-            preds.savefig(resultImageUrl, format='jpg', bbox_inches="tight", pad_inches=0)
+            preds.subplots_adjust(top=1, bottom=0, right=1, left=0, hspace=0, wspace=0)
+            # preds.margins(0, 0)
+            plt.margins(0, 0)
+            preds.savefig(img, format='jpg', pad_inches=-1)
+            preds.savefig(resultImageUrl, format='jpg',pad_inches=-1)
             img.seek(0)
             data = base64.b64encode(img.getvalue()).decode()
             data_url = 'data:image/jpeg;base64,{}'.format(quote(data))
@@ -278,7 +287,7 @@ def pickResult(result,threshold=0.7):
     return result
 
 if __name__ == '__main__':
-    port = 443  # 端口号
+    port = 801  # 端口号
     dev = 1 #1表示是开发模式
     if dev==1:
         # app.run('', port, debug=True,  use_reloader=False)
