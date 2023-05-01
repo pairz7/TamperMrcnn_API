@@ -42,8 +42,8 @@ MODEL_DIR = os.path.join(ROOT_DIR, "logs")
 host = 'notamper.cn'
 port = 3306
 db = 'tamperWeb'
-user = 'web_user'
-password = '123456'
+user = ''
+password = ''
 
 # ---- 用pymysql 操作数据库
 def get_connection():
