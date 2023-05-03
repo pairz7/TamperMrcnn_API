@@ -28,8 +28,8 @@ from mrcnn import visualize
 from flask_cors import CORS
 
 from matplotlib import pyplot as plt
-import matplotlib
-matplotlib.use("TkAgg")
+# import matplotlib
+# matplotlib.use("TkAgg")
 
 app = Flask(__name__)
 CORS(app, resources=r'/*')
@@ -166,10 +166,10 @@ def upload():
             cursor = mysql_conn.cursor(pymysql.cursors.DictCursor)
             cursor.execute("INSERT INTO `imageRecord` \
             (`detectID`, `serviceName`, `detectThreshold`,`detectDatetime`, \
-             `detectState`,`resultImageUrl`, `uploadImageUrl`, `callerIP`, `callerUsername`) \
-            VALUES ('%s', '%s', '%.2f','%s', '%s', '%s', '%s', '%s', '%s')" % (
+             `detectState`,`resultImageUrl`, `uploadImageUrl`, `callerIP`, `callerUsername`, `orderID`) \
+            VALUES ('%s', '%s', '%.2f','%s', '%s', '%s', '%s', '%s', '%s', '%s')" % (
                 detectID, serviceName, threshold, detectDatetime, "检测中",\
-                resultImageUrl, uploadImageUrl, callerIP, callerUsername))
+                resultImageUrl, uploadImageUrl, callerIP, callerUsername, orderID))
             mysql_conn.commit()
             cursor.close()
         except Exception as e:
